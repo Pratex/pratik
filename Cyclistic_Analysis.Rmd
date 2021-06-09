@@ -2,10 +2,7 @@
 title: "Cyclistic Google Capestone Project"
 author: "Pratik Patel"
 date: "02/06/2021"
-output:
-  word_document: default
-  html_document: default
-  pdf_document: default
+output: rmarkdown::github_document 
 ---
 
 ```{r echo=FALSE, error=FALSE, message=FALSE}
