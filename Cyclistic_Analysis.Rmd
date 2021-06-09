@@ -1,0 +1,247 @@
+---
+title: "Cyclistic Google Capestone Project"
+author: "Pratik Patel"
+date: "02/06/2021"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+
+```{r echo=FALSE, error=FALSE, message=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(lubridate)
+library(dplyr)
+```
+
+# CYCLISTIC ANALYSIS
+
+## Task:How do annual members and casual riders use Cyclistic bikes differently?
+
+### Introduction:
+
+**Cyclistic** is a bike-share offering company with a fleet of 5,824 bicycles geotracked and a network of 692 stations across Chicago.
+
+**The Business task** of Cyclistic is "Maximizing the number of annual members".
+
+**The Stakeholders** of this analysis are: \* Lily Moreno (Director of marketing) \* Cyclistic Marketing analytics team \* Cyclistic executive team.
+
+### Step 1: Collecting the data
+
+For this analysis, I have downloaded three excel files from [Divvy Data website](https://divvy-tripdata.s3.amazonaws.com/index.html) which are Divvy_Trips_2019_Q3.csv, Divvy_Trips_2019_Q4.csv and Divvy_Trips_2020_Q1.csv
+
+```{r}
+q3_2019 <- read_csv("~/Divvy_Trips_2019_Q3.csv")
+q4_2019 <- read_csv("~/Divvy_Trips_2019_Q4.csv")
+q1_2020 <- read_csv("~/Divvy_Trips_2020_Q1.csv")
+```
+
+### Step 2: Combine into one file
+
+Before we merge into one file, we are going to change the column names to make all the columns resemble that of Q1_2020 using the following code:
+
+```{r}
+q4_2019 <- rename(q4_2019
+                   ,ride_id = trip_id
+                   ,rideable_type = bikeid 
+                   ,started_at = start_time  
+                   ,ended_at = end_time  
+                   ,start_station_name = from_station_name 
+                   ,start_station_id = from_station_id 
+                   ,end_station_name = to_station_name 
+                   ,end_station_id = to_station_id 
+                   ,member_casual = usertype)
+q3_2019 <- rename(q3_2019
+                   ,ride_id = trip_id
+                   ,rideable_type = bikeid 
+                   ,started_at = start_time  
+                   ,ended_at = end_time  
+                   ,start_station_name = from_station_name 
+                   ,start_station_id = from_station_id 
+                   ,end_station_name = to_station_name 
+                   ,end_station_id = to_station_id 
+                   ,member_casual = usertype)
+```
+
+Then we going to convert ride_id and rideable_type to character to stack correctly:
+
+```{r}
+q4_2019 <-  mutate(q4_2019, ride_id = as.character(ride_id)
+                   ,rideable_type = as.character(rideable_type)) 
+q3_2019 <-  mutate(q3_2019, ride_id = as.character(ride_id)
+                   ,rideable_type = as.character(rideable_type))
+```
+
+Combining into one file called all_trips:
+
+```{r}
+all_trips <- bind_rows(q3_2019, q4_2019, q1_2020)
+```
+
+Next we will remove lat, long, birthyear, and gender fields as this data was dropped beginning in 2020:
+
+```{r}
+all_trips <- all_trips %>%  
+  select(-c(start_lat, start_lng, end_lat, end_lng, birthyear, gender))
+
+```
+
+```{r echo=FALSE, results='asis'}
+library(knitr)
+kable(all_trips[1:6, ], caption = "The all_trips table:")
+
+```
+
+### Step 3: Clean up and add data to prepare for analysis
+
+There are few problems we need to fix:
+
+1.  In "member_casual" column, there are four types and they include "member", "Subscriber", "Customer",and "Casual". Yet "member"="Subscriber" and "casual"="Customer". So we will change them to one to prevent any confusion during the analysis:
+
+```{r}
+all_trips <-  all_trips %>% 
+  mutate(member_casual = recode(member_casual
+                                ,"Subscriber" = "member"
+                                ,"Customer" = "casual"))
+```
+
+The final results:
+
+```{r echo=FALSE, results='asis'}
+library(knitr)
+kable(table(all_trips$member_casual))
+
+```
+
+2.We are going to additional columns such as day, month and year to provide additional opportunities to aggregate the data.
+
+```{r}
+all_trips$date <- as.Date(all_trips$started_at) #The default format is yyyy-mm-dd
+all_trips$month <- format(as.Date(all_trips$date), "%m")
+all_trips$day <- format(as.Date(all_trips$date), "%d")
+all_trips$year <- format(as.Date(all_trips$date), "%Y")
+all_trips$day_of_week <- format(as.Date(all_trips$date), "%A")
+```
+
+3.We are going to add ride_length(calculated field for length) since Q1_2020 data did not "tripduration" column in order to make the data frame consistent.
+
+```{r results='asis'}
+all_trips$ride_length <- difftime(all_trips$ended_at,all_trips$started_at)
+
+```
+
+4.In the tripduration, there are some rides that show as negative including several hundred rides where Divvy took bikes out of circulation for Quality Control reasons. We will want to delete these rides. First we are going to convert "ride_length" from Factor to numeric so we can run calculations on the data
+
+```{r}
+is.factor(all_trips$ride_length)
+all_trips$ride_length <- as.numeric(as.character(all_trips$ride_length))
+is.numeric(all_trips$ride_length)
+```
+
+Then we are going create a new version of the dataframe (v2) since data is being removed.
+
+```{r}
+all_trips_v2 <- all_trips[!(all_trips$start_station_name == "HQ QR" | all_trips$ride_length<0),]
+```
+
+### Conducting a Descriptive Analysis
+
+First we need to need to find mean, median, maximum and minimum of the ride length.
+
+```{r}
+summary(all_trips_v2$ride_length)
+```
+
+Now we are going to compare member and casual users:
+
+```{r}
+aggregate(all_trips_v2$ride_length ~ all_trips_v2$member_casual, FUN = mean)
+
+aggregate(all_trips_v2$ride_length ~ all_trips_v2$member_casual, FUN = median)
+
+aggregate(all_trips_v2$ride_length ~ all_trips_v2$member_casual, FUN = max)
+
+aggregate(all_trips_v2$ride_length ~ all_trips_v2$member_casual, FUN = min)
+
+```
+
+Now lets get the average ride time by each day in order starting from Sunday for each member vs casual users:
+
+```{r}
+all_trips_v2$day_of_week <- ordered(all_trips_v2$day_of_week, levels=c("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"))
+aggregate(all_trips_v2$ride_length ~ all_trips_v2$member_casual + all_trips_v2$day_of_week, FUN = mean)
+
+```
+
+Lets analyze ridership data by type and weekday and then visualize it on bar graph:
+
+```{r}
+all_trips_v2 %>% 
+  mutate(weekday = wday(started_at, label = TRUE)) %>%  
+  group_by(member_casual, weekday) %>%  
+  summarise(number_of_rides = n()						
+            ,average_duration = mean(ride_length), .groups = 'drop') %>% 		
+  arrange(member_casual, weekday)
+```
+
+```{r echo = TRUE}
+all_trips_v2 %>% 
+  mutate(weekday = wday(started_at, label = TRUE)) %>% 
+  group_by(member_casual, weekday) %>% 
+  summarise(number_of_rides = n(), options(scipen=5),
+            ,average_duration = mean(ride_length), .groups = 'drop') %>% 
+  arrange(member_casual, weekday)  %>% 
+  ggplot(aes(x = weekday, y = number_of_rides, fill = member_casual)) +
+  geom_col(position = "dodge")
+```
+
+```{r echo = TRUE}
+all_trips_v2 %>% 
+  mutate(weekday = wday(started_at, label = TRUE)) %>% 
+  group_by(member_casual, weekday) %>% 
+  summarise(number_of_rides = n()
+            ,average_duration = mean(ride_length), .groups = 'drop') %>% 
+  arrange(member_casual, weekday)  %>% 
+  ggplot(aes(x = weekday, y = average_duration, fill = member_casual)) +
+  geom_col(position = "dodge")
+```
+
+```{r}
+all_trips_v2 %>%
+  mutate(month = month(started_at, label = TRUE)) %>%
+  group_by(member_casual, month) %>%
+  summarise(number_of_rides = n(), .groups = 'drop') %>%
+  ggplot(aes(x= month, y= number_of_rides, fill = member_casual)) +
+  geom_col(position = "dodge") 
+```
+
+### Observations from the data
+
+\*Casual Rider's ride length is mostly from Monday to Friday and least on Saturday and Sunday with Friday being the maximum and Saturday being the minimum indicating use of bikes for commuting to and from work.
+
+\*Members Rider's ride length is mostly on Sunday and Saturday showing that the use of bikes for leisure activities mostly.
+
+\*The average ride time for a casual is 3812 seconds(\~64 minutes) and for a member is 853 seconds(\~14 minutes). That means an average casual rider rides **4.5 times** more than an average member rider.
+
+\*For both members and casual riders, the **highest number of rides** was on Tuesday with **433,868 rides** and the **lowest** was on Sunday with **318,276 rides**.
+
+\*The **lowest number of rides** of casual riders was in month of **January** and for members, it was month of **March**.
+
+\*The **highest number of rides** for both members and casual riders was in the month of **August**.
+
+## Recommendations
+
+\*1. Based on months, the highest number of rides was recorded from July to September indicating that users prefer to ride in summer more and less in Winter. To increase users in Winter, Cyclistic could give winter special promotions to member like discounts to increase the number of memberships.
+
+\*2. Since casual riders ride 4.5 times more than members indicating that fees of member is not that suitable to the needs of a casual rider. In this case, I recommend giving more benefits and discounts to members in order to attract more members from casual riders category.
+
+\*3. Also Cyclistic should increase the time slots for Winter only to allow people for adjusting to the cold season during the year.
+
+### References
+
+-   For the analysis above, I used Divvy trip history data files from <https://divvy-tripdata.s3.amazonaws.com/index.html>
+
+## 
+
+##  **THANK YOU FOR READING**
